@@ -33,6 +33,37 @@ app.post("/transcribe", async (req, res) => {
   }
 });
 
+// Route to handle audio file transcription
+app.post("/translate", async (req, res) => {
+  try {
+    const body = req.body;
+    const encodedParams = new URLSearchParams();
+    encodedParams.set("q", body.q);
+    encodedParams.set("target", body.target);
+    encodedParams.set("source", body.source);
+    console.log(encodedParams);
+    const options = {
+      method: "POST",
+      url: "https://google-translate1.p.rapidapi.com/language/translate/v2",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "Accept-Encoding": "application/gzip",
+        "X-RapidAPI-Key": "08a6c56cc0msh2dfa8a53f481237p118c0djsnae7dadfee40e",
+        "X-RapidAPI-Host": "google-translate1.p.rapidapi.com",
+      },
+      data: encodedParams,
+    };
+
+    const response = await axios.request(options);
+    const data = response.data.data.translations;
+    res.json({
+      data: data,
+    });
+  } catch (error) {
+    console.error(error);
+  }
+});
+
 // Start the server
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
