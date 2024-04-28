@@ -3,6 +3,7 @@ const bodyParser = require("body-parser");
 const axios = require("axios");
 const OpenAI = require("openai");
 const fs = require("fs");
+const aromanize = require("aromanize");
 const app = express();
 const port = process.env.PORT || 3000;
 // Middleware to parse JSON bodies
@@ -57,10 +58,26 @@ app.post("/translate", async (req, res) => {
     const response = await axios.request(options);
     const data = response.data.data.translations;
     res.json({
-      data: data,
+      translatedText: data[0].translatedText,
     });
   } catch (error) {
     console.error(error);
+    res.status(500).json({ error: "Failed to translate text" });
+  }
+});
+
+// Route to handle audio file transcription
+app.post("/aromanize", async (req, res) => {
+  try {
+    const body = req.body;
+    const aromanizeText = aromanize.romanize(body.text);
+
+    res.json({
+      text: aromanizeText,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to aromanize text" });
   }
 });
 
