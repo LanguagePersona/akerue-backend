@@ -98,6 +98,7 @@ app.post("/chat", async (req, res) => {
       const completion = await openai.chat.completions.create({
         messages: [{ role: "system", content: generateIntroductionMessage() }],
         model: "gpt-3.5-turbo-0125",
+        max_tokens: 20,
       });
 
       // Retrieve the system's response from OpenAI
@@ -107,17 +108,100 @@ app.post("/chat", async (req, res) => {
       const completion = await openai.chat.completions.create({
         messages: chatHistory,
         model: "gpt-3.5-turbo-0125",
+        max_tokens: 20,
       });
 
       // Retrieve the system's response from OpenAI
       systemMessage = completion.choices[0].message;
     }
 
+    const aromanizedMessage = aromanize.romanize(systemMessage.content);
+
+    const options = {
+      method: "POST",
+      url: "https://microsoft-translator-text.p.rapidapi.com/translate",
+      params: {
+        "to[0]": "en",
+        "api-version": "3.0",
+        profanityAction: "NoAction",
+        textType: "plain",
+      },
+      headers: {
+        "content-type": "application/json",
+        "X-RapidAPI-Key": "08a6c56cc0msh2dfa8a53f481237p118c0djsnae7dadfee40e",
+        "X-RapidAPI-Host": "microsoft-translator-text.p.rapidapi.com",
+      },
+      data: [
+        {
+          Text: systemMessage.content,
+        },
+      ],
+    };
+    const response = await axios.request(options);
+    const translation = response.data[0].translations;
+
     // Send the system's response back to the client
-    res.json({ response: systemMessage });
+    res.json({
+      response: systemMessage,
+      aromanizedMessage: aromanizedMessage,
+      translatedMessage: translation,
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: "Failed to complete text" });
+  }
+});
+
+app.post("/suggestion", async (req, res) => {
+  try {
+    const response = req.body.response;
+    const numberOfSuggestions = 1;
+    const responseMessage = `You are a Korean language tutor. 
+    You have just responded to the user with this response ${response}. 
+    Now, before the user responses to you, I want you to give the user a suggested response to what you had said, 
+    that is appropriate so that the user can have help in practicing the user's conversational Korean. You can ONLY RESPOND IN KOREAN`;
+
+    // Call OpenAI's completion API
+    const completion = await openai.chat.completions.create({
+      messages: [{ role: "system", content: responseMessage }],
+      model: "gpt-3.5-turbo-0125",
+      max_tokens: 20,
+      n: numberOfSuggestions,
+    });
+    const suggestedResponse = completion.choices[0].message.content;
+    const aromanizedResponse = aromanize.romanize(suggestedResponse);
+
+    const options = {
+      method: "POST",
+      url: "https://microsoft-translator-text.p.rapidapi.com/translate",
+      params: {
+        "to[0]": "en",
+        "api-version": "3.0",
+        profanityAction: "NoAction",
+        textType: "plain",
+      },
+      headers: {
+        "content-type": "application/json",
+        "X-RapidAPI-Key": "08a6c56cc0msh2dfa8a53f481237p118c0djsnae7dadfee40e",
+        "X-RapidAPI-Host": "microsoft-translator-text.p.rapidapi.com",
+      },
+      data: [
+        {
+          Text: suggestedResponse,
+        },
+      ],
+    };
+    const translatedResponse = await axios.request(options);
+    const translation = translatedResponse.data[0].translations;
+
+    res.json({
+      suggestions: suggestedResponse,
+      translatedResponse: translation[0].text,
+      aromanizedResponse: aromanizedResponse,
+    });
+  } catch (error) {
+    console.error("Error generating suggested responses:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -139,10 +223,8 @@ function generateIntroductionMessage() {
     address you in their own language when felt their ${language} is not well 
     enough. When that happens, first translate their message to ${language}, 
     and then reply.
-    * Ensure that your response is short and concise with a maximum of 20 tokens.
+    * Ensure that your response is short and concise with a maximum of 10 tokens.
     * Can you start the first conversation by asking "Hello, How are you today?"
-    * IMPORTANT: If your student makes any mistakes, be it typo or grammar, 
-    you MUST first correct your student and only then reply.
     * You are only allowed to speak ${language}.`;
 
   return introductionMessage;
