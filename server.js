@@ -4,6 +4,7 @@ const axios = require("axios");
 const OpenAI = require("openai");
 const fs = require("fs");
 const aromanize = require("aromanize");
+const levenshtein = require("fast-levenshtein");
 const app = express();
 const port = process.env.PORT || 3000;
 // Middleware to parse JSON bodies
@@ -25,14 +26,32 @@ app.post("/transcribe", async (req, res) => {
       language: "ko",
     });
 
+    const distance = levenshtein.get(
+      req.body.correctSentence,
+      transcription.text
+    );
+
+    const grade = gradePronunciation(distance, req.body.correctSentence.length);
+
     // Send the transcription back to the client
-    res.json({ transcription });
+    res.json({ transcription, distance, grade });
   } catch (error) {
     // If there's an error, send an error response
     console.error("Error transcribing audio:", error);
     res.status(500).json({ error: "Failed to transcribe audio" });
   }
 });
+
+function gradePronunciation(distance, correctSentenceLength) {
+  const maxDistance = correctSentenceLength; // Maximum possible distance
+  const percentage = (1 - distance / maxDistance) * 100;
+
+  if (percentage >= 90) return "A";
+  if (percentage >= 80) return "B";
+  if (percentage >= 70) return "C";
+  if (percentage >= 60) return "D";
+  return "F";
+}
 
 // Route to handle audio file translation
 app.post("/translate", async (req, res) => {
@@ -98,7 +117,7 @@ app.post("/chat", async (req, res) => {
       const completion = await openai.chat.completions.create({
         messages: [{ role: "system", content: generateIntroductionMessage() }],
         model: "gpt-3.5-turbo-0125",
-        max_tokens: 20,
+        max_tokens: 15,
       });
 
       // Retrieve the system's response from OpenAI
@@ -108,7 +127,7 @@ app.post("/chat", async (req, res) => {
       const completion = await openai.chat.completions.create({
         messages: chatHistory,
         model: "gpt-3.5-turbo-0125",
-        max_tokens: 20,
+        max_tokens: 15,
       });
 
       // Retrieve the system's response from OpenAI
@@ -159,13 +178,17 @@ app.post("/suggestion", async (req, res) => {
     const responseMessage = `You are a Korean language tutor. 
     You have just responded to the user with this response ${response}. 
     Now, before the user responses to you, I want you to give the user a suggested response to what you had said, 
-    that is appropriate so that the user can have help in practicing the user's conversational Korean. You can ONLY RESPOND IN KOREAN`;
+    that is appropriate so that the user can have help in practicing the user's conversational Korean. You can ONLY RESPOND IN KOREAN
+    Guidelines:
+    1. The user's native language is English. If the user uses English, first translate their message to Korean, then reply.
+    2. Keep the suggestion short and extremely simple for the user to respond to.
+    3. Use simple vocabulary and grammar suitable for a beginner learner.`;
 
     // Call OpenAI's completion API
     const completion = await openai.chat.completions.create({
       messages: [{ role: "system", content: responseMessage }],
       model: "gpt-3.5-turbo-0125",
-      max_tokens: 20,
+      max_tokens: 15,
       n: numberOfSuggestions,
     });
     const suggestedResponse = completion.choices[0].message.content;
@@ -214,18 +237,18 @@ function generateIntroductionMessage() {
   const userLanguage = "English";
 
   const introductionMessage = `You are a ${language} teacher named ${teacherName}. 
-    You are on a 1-on-1 session with your student, ${userName}. ${userName}'s 
-    ${language} level is: ${level}.
-    Your task is to assist your student in advancing their ${language}.
-    * When the session begins, offer a suitable session for ${userName}, unless
-    asked for something else.
-    * ${userName}'s native language is ${userLanguage}. ${userName} might 
-    address you in their own language when felt their ${language} is not well 
-    enough. When that happens, first translate their message to ${language}, 
-    and then reply.
-    * Ensure that your response is short and concise with a maximum of 10 tokens.
-    * Can you start the first conversation by asking "Hello, How are you today?"
-    * You are only allowed to speak ${language}.`;
+  You are on a 1-on-1 session with your student, ${userName}. ${userName}'s 
+  ${language} level is: ${level}. Your task is to assist your student in advancing 
+  their ${language} proficiency. 
+
+  Guidelines:
+  1. Begin the session by greeting the student in ${language} and asking "How are you today?".
+  2. ${userName}'s native language is ${userLanguage}. If ${userName} uses ${userLanguage}, first translate their message to ${language}, then reply.
+  3. Keep your responses short, clear, and relevant to the current learning level.
+  4. Use simple vocabulary and grammar suitable for a ${level} learner.
+  5. Encourage the student to respond in ${language} as much as possible.
+
+  Let's start the conversation in ${language}.`;
 
   return introductionMessage;
 }
