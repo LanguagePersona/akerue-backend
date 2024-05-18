@@ -14,6 +14,39 @@ app.use(bodyParser.json());
 const openaiEndpoint = "https://api.openai.com/v1/speech/transcription";
 
 const openai = new OpenAI();
+const dialogues = {
+  안녕하세요: "안녕하세요 오늘 기분이 어때요?",
+  "저는 잘 지내요": "좋아요 오늘 뭐 했어요?",
+  "저는 한국어를 배웠어요": "멋지네요 얼마나 배웠어요?",
+  "나 단어 백개를 외웠어오. 더 이상 공부 싶지않아":
+    "너무 잘 했어요 그럼 내일 뭘 할거여요?",
+  "내일 친구를 만나고 쇼핑에 갈려고요": "좋아요. 쇼핑을 좋아 하세요?",
+  "그럼요 너무 좋아해요. 너무 좋아서 자주 돈 어버하게 써요":
+    "아, 그럼 돈 관리 잘 해야되요. 보통 무엇을 사요?",
+  "보통 올리브영에가서 다양한 화장품이너무 많고 예뻐서 그냥 다사요":
+    "이렇게 하면 안되잖아. 필요한 것은 사",
+  "네, 열심히 할게요.": "올리브영 말고 다른거 뭘 사요?",
+  "옷도 많이사긴해요 요즘 한국 브렌드들이 트렌디잖아.":
+    "아네 근데 보통 비싸잖아, 그래도 왜 사요?",
+  "예쁘고 오빠가 입은 적이 있으니까": "오",
+};
+
+const reversedDialogues = {
+  "안녕하세요, 시작하겠습니다": "안녕하세요",
+  "안녕하세요 오늘 기분이 어때요?": "저는 잘 지내요",
+  "좋아요 오늘 뭐 했어요?": "저는 한국어를 배웠어요",
+  "멋지네요 얼마나 배웠어요?": "나 단어 백개를 외웠어오. 더 이상 공부 싶지않아",
+  "너무 잘 했어요 그럼 내일 뭘 할거여요?": "내일 친구를 만나고 쇼핑에 갈려고요",
+  "좋아요. 쇼핑을 좋아 하세요?":
+    "그럼요 너무 좋아해요. 너무 좋아서 자주 돈 어버하게 써요",
+  "아, 그럼 돈 관리 잘 해야되요. 보통 무엇을 사요?":
+    "보통 올리브영에가서 다양한 화장품이너무 많고 예뻐서 그냥 다사요",
+  "이렇게 하면 안되잖아. 필요한 것은 사": "네, 열심히 할게요.",
+  "올리브영 말고 다른거 뭘 사요?":
+    "옷도 많이사긴해요 요즘 한국 브렌드들이 트렌디잖아.",
+  "아네 근데 보통 비싸잖아, 그래도 왜 사요?":
+    "예쁘고 오빠가 입은 적이 있으니까",
+};
 
 // Route to handle audio file transcription
 app.post("/transcribe", async (req, res) => {
@@ -103,7 +136,8 @@ app.post("/aromanize", async (req, res) => {
 
 const chatHistory = [];
 
-// Route to handle chat completion
+// Route to handle chat completion [AI VERSION]
+/*
 app.post("/chat", async (req, res) => {
   try {
     const userMessage = req.body.message;
@@ -170,7 +204,76 @@ app.post("/chat", async (req, res) => {
     res.status(500).json({ error: "Failed to complete text" });
   }
 });
+*/
 
+// Route to handle chat completion [HARD CODE VERSION]
+app.post("/chat", async (req, res) => {
+  try {
+    let userMessage = req.body.message;
+    let systemMessage = "";
+    if (userMessage === "") {
+      systemMessage = "안녕하세요, 시작하겠습니다";
+    } else {
+      userMessage = findBestMatch(userMessage);
+      systemMessage = dialogues[userMessage];
+    }
+
+    const aromanizedMessage = aromanize.romanize(systemMessage);
+
+    const options = {
+      method: "POST",
+      url: "https://microsoft-translator-text.p.rapidapi.com/translate",
+      params: {
+        "to[0]": "en",
+        "api-version": "3.0",
+        profanityAction: "NoAction",
+        textType: "plain",
+      },
+      headers: {
+        "content-type": "application/json",
+        "X-RapidAPI-Key": "08a6c56cc0msh2dfa8a53f481237p118c0djsnae7dadfee40e",
+        "X-RapidAPI-Host": "microsoft-translator-text.p.rapidapi.com",
+      },
+      data: [
+        {
+          Text: systemMessage,
+        },
+      ],
+    };
+    const response = await axios.request(options);
+    const translation = response.data[0].translations;
+
+    // Send the system's response back to the client
+    res.json({
+      response: systemMessage,
+      aromanizedMessage: aromanizedMessage,
+      translatedMessage: translation,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Failed to complete text" });
+  }
+});
+
+function findBestMatch(input) {
+  let bestMatch = null;
+  let lowestDistance = Infinity;
+
+  for (const userString in dialogues) {
+    if (dialogues.hasOwnProperty(userString)) {
+      const distance = levenshtein.get(input, userString);
+      if (distance < lowestDistance) {
+        lowestDistance = distance;
+        bestMatch = userString;
+      }
+    }
+  }
+
+  return bestMatch;
+}
+
+// Route to handle suggested response generation [AI VERSION]
+/*
 app.post("/suggestion", async (req, res) => {
   try {
     const response = req.body.response;
@@ -192,6 +295,50 @@ app.post("/suggestion", async (req, res) => {
       n: numberOfSuggestions,
     });
     const suggestedResponse = completion.choices[0].message.content;
+    const aromanizedResponse = aromanize.romanize(suggestedResponse);
+
+    const options = {
+      method: "POST",
+      url: "https://microsoft-translator-text.p.rapidapi.com/translate",
+      params: {
+        "to[0]": "en",
+        "api-version": "3.0",
+        profanityAction: "NoAction",
+        textType: "plain",
+      },
+      headers: {
+        "content-type": "application/json",
+        "X-RapidAPI-Key": "08a6c56cc0msh2dfa8a53f481237p118c0djsnae7dadfee40e",
+        "X-RapidAPI-Host": "microsoft-translator-text.p.rapidapi.com",
+      },
+      data: [
+        {
+          Text: suggestedResponse,
+        },
+      ],
+    };
+    const translatedResponse = await axios.request(options);
+    const translation = translatedResponse.data[0].translations;
+
+    res.json({
+      suggestions: suggestedResponse,
+      translatedResponse: translation[0].text,
+      aromanizedResponse: aromanizedResponse,
+    });
+  } catch (error) {
+    console.error("Error generating suggested responses:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+*/
+
+app.post("/suggestion", async (req, res) => {
+  try {
+    const response = req.body.response;
+    const numberOfSuggestions = 1;
+    console.log(response);
+    const suggestedResponse = reversedDialogues[response];
+
     const aromanizedResponse = aromanize.romanize(suggestedResponse);
 
     const options = {
